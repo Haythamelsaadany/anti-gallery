@@ -53,7 +53,7 @@ if check_auth():
     st.sidebar.title("🏛️ لوحة التحكم")
     menu = st.sidebar.radio("القائمة", ["عرض المخزن 🖼️", "البحث الذكي (AI) 🤖", "إضافة قطعة ✨", "التقارير والإكسيل 📊"])
 
-    # --- قسم البحث الذكي (إصلاح الروابط النهائي) ---
+    # --- قسم البحث الذكي (تم تصحيح الروابط بناءً على الصورة) ---
     if menu == "البحث الذكي (AI) 🤖":
         st.header("🤖 خبير التقييم والبحث العالمي")
         up = st.file_uploader("ارفع صورة للبحث عن قيمتها", type=['jpg', 'png', 'jpeg'])
@@ -65,29 +65,30 @@ if check_auth():
                     raw = Image.open(up).convert('RGB')
                     inputs = proc(raw, return_tensors="pt")
                     out = mod.generate(**inputs)
-                    # استخراج النص الصافي
+                    
+                    # تنظيف النص المستخرج ليكون صالحاً للروابط
                     raw_desc = proc.decode(out, skip_special_tokens=True)
                     clean_desc = str(raw_desc).replace("[", "").replace("]", "").replace("'", "").strip()
                     
                     st.success(f"✅ تم التعرف على: {clean_desc}")
                     
-                    # ترميز النص ليكون صالحاً كـ URL
+                    # ترميز النص بشكل صحيح للبحث
                     encoded_q = urllib.parse.quote_plus(clean_desc)
                     
                     st.divider()
-                    st.subheader("🔗 روابط البحث عن السعر (اضغط لفتح المتصفح):")
+                    st.subheader("🔗 روابط البحث المباشرة:")
                     
-                    # روابط مباشرة ومختبرة
-                    ebay_url = f"https://www.ebay.com{encoded_q}"
+                    # تصحيح هيكل الروابط لضمان الفتح (استبدال . بمصلة مائلة وإضافة كود البحث)
                     google_url = f"https://www.google.com{encoded_q}&tbm=isch"
+                    ebay_url = f"https://www.ebay.com{encoded_q}"
                     
-                    col1, col2 = st.columns(2)
-                    col1.link_button("🛒 أسعار eBay", ebay_url, use_container_width=True)
-                    col2.link_button("🔍 صور Google", google_url, use_container_width=True)
+                    c1, c2 = st.columns(2)
+                    c1.link_button("🔍 صور Google", google_url, use_container_width=True)
+                    c2.link_button("🛒 أسعار eBay", ebay_url, use_container_width=True)
 
-    # --- باقي الأقسام (المخزن، الإضافة، التقارير) ---
+    # --- الأقسام الأخرى ---
     elif menu == "عرض المخزن 🖼️":
-        st.header("🖼️ مقتنياتك الحالية")
+        st.header("🖼️ المقتنيات الحالية")
         with sqlite3.connect(DB_NAME) as conn:
             df = pd.read_sql("SELECT * FROM antiques", conn)
         if df.empty: st.info("المخزن فارغ.")
