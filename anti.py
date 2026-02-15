@@ -6,7 +6,7 @@ from PIL import Image
 import io
 import urllib.parse
 
-# --- 1. الإعدادات الأساسية ---
+# --- 1. الإعدادات وقاعدة البيانات ---
 DB_NAME = 'gallery.db'
 IMG_FOLDER = "images"
 if not os.path.exists(IMG_FOLDER): os.makedirs(IMG_FOLDER)
@@ -17,7 +17,7 @@ def init_db():
                      (id TEXT PRIMARY KEY, name TEXT, description TEXT, 
                       price REAL, image_path TEXT)''')
 
-# --- 2. محرك الذكاء الاصطناعي (معالجة الأخطاء) ---
+# --- 2. محرك الذكاء الاصطناعي ---
 try:
     from transformers import BlipProcessor, BlipForConditionalGeneration
     HAS_AI = True
@@ -31,7 +31,7 @@ def load_ai():
     m = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
     return p, m
 
-# --- 3. نظام الحماية (admin / 1234) ---
+# --- 3. نظام الحماية ---
 def check_auth():
     if "auth" not in st.session_state: st.session_state["auth"] = False
     if not st.session_state["auth"]:
@@ -45,7 +45,7 @@ def check_auth():
         return False
     return True
 
-# --- 4. واجهة البرنامج الكاملة ---
+# --- 4. واجهة البرنامج ---
 st.set_page_config(page_title="نظام الجاليري PRO", layout="wide")
 init_db()
 
@@ -53,10 +53,10 @@ if check_auth():
     st.sidebar.title("🏛️ لوحة التحكم")
     menu = st.sidebar.radio("القائمة", ["عرض المخزن 🖼️", "البحث الذكي (AI) 🤖", "إضافة قطعة ✨", "التقارير والإكسيل 📊"])
 
-    # --- قسم البحث الذكي (تم إصلاح الخطأ الأحمر هنا) ---
+    # --- قسم البحث الذكي (إصلاح الروابط النهائي) ---
     if menu == "البحث الذكي (AI) 🤖":
         st.header("🤖 خبير التقييم والبحث العالمي")
-        up = st.file_uploader("ارفع صورة للتحليل والبحث عن القيمة", type=['jpg', 'png', 'jpeg'])
+        up = st.file_uploader("ارفع صورة للبحث عن قيمتها", type=['jpg', 'png', 'jpeg'])
         if up:
             st.image(up, width=300)
             if st.button("🚀 ابدأ التحليل والبحث"):
@@ -65,20 +65,29 @@ if check_auth():
                     raw = Image.open(up).convert('RGB')
                     inputs = proc(raw, return_tensors="pt")
                     out = mod.generate(**inputs)
-                    # إصلاح TypeError: تحويل النتيجة لنص صافي (String) ومسح الأقواس
+                    # استخراج النص الصافي
                     raw_desc = proc.decode(out, skip_special_tokens=True)
-                    clean_desc = str(raw_desc).strip("[]'")
+                    clean_desc = str(raw_desc).replace("[", "").replace("]", "").replace("'", "").strip()
                     
                     st.success(f"✅ تم التعرف على: {clean_desc}")
-                    q = urllib.parse.quote(clean_desc)
+                    
+                    # ترميز النص ليكون صالحاً كـ URL
+                    encoded_q = urllib.parse.quote_plus(clean_desc)
+                    
                     st.divider()
+                    st.subheader("🔗 روابط البحث عن السعر (اضغط لفتح المتصفح):")
+                    
+                    # روابط مباشرة ومختبرة
+                    ebay_url = f"https://www.ebay.com{encoded_q}"
+                    google_url = f"https://www.google.com{encoded_q}&tbm=isch"
+                    
                     col1, col2 = st.columns(2)
-                    col1.link_button("🛒 شاهد الأسعار في eBay", f"https://www.ebay.com{q}")
-                    col2.link_button("🔍 البحث في Google Images", f"https://www.google.com{q}&tbm=isch")
+                    col1.link_button("🛒 أسعار eBay", ebay_url, use_container_width=True)
+                    col2.link_button("🔍 صور Google", google_url, use_container_width=True)
 
-    # --- قسم عرض المخزن ---
+    # --- باقي الأقسام (المخزن، الإضافة، التقارير) ---
     elif menu == "عرض المخزن 🖼️":
-        st.header("🖼️ المقتنيات الحالية")
+        st.header("🖼️ مقتنياتك الحالية")
         with sqlite3.connect(DB_NAME) as conn:
             df = pd.read_sql("SELECT * FROM antiques", conn)
         if df.empty: st.info("المخزن فارغ.")
@@ -96,28 +105,23 @@ if check_auth():
                             if os.path.exists(row['image_path']): os.remove(row['image_path'])
                             st.rerun()
 
-    # --- قسم إضافة قطعة ---
     elif menu == "إضافة قطعة ✨":
-        st.header("✨ إضافة قطعة للمخزن")
         with st.form("add_new"):
-            f_id = st.text_input("الكود (ID)"); f_n = st.text_input("الاسم")
+            f_id = st.text_input("ID"); f_n = st.text_input("الاسم")
             f_p = st.number_input("السعر"); f_i = st.file_uploader("الصورة")
-            f_d = st.text_area("الوصف")
             if st.form_submit_button("💾 حفظ"):
                 if f_id and f_i:
                     path = os.path.join(IMG_FOLDER, f"{f_id}.jpg")
                     with open(path, "wb") as f: f.write(f_i.getbuffer())
                     with sqlite3.connect(DB_NAME) as conn:
-                        conn.execute("INSERT OR REPLACE INTO antiques VALUES (?,?,?,?,?)", (f_id, f_n, f_d, f_p, path))
+                        conn.execute("INSERT OR REPLACE INTO antiques VALUES (?,?,?,?,?)", (f_id, f_n, "", f_p, path))
                     st.success("تم الحفظ!"); st.rerun()
 
-    # --- قسم التقارير ---
     elif menu == "التقارير والإكسيل 📊":
-        st.header("📊 جرد المخزن")
         with sqlite3.connect(DB_NAME) as conn:
             df = pd.read_sql("SELECT * FROM antiques", conn)
         st.dataframe(df, use_container_width=True)
         if not df.empty:
             towrite = io.BytesIO()
             df.to_excel(towrite, index=False, engine='openpyxl')
-            st.download_button("📥 تحميل ملف Excel", towrite.getvalue(), "inventory.xlsx")
+            st.download_button("📥 تحميل Excel", towrite.getvalue(), "inventory.xlsx")
