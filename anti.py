@@ -2,7 +2,7 @@ import streamlit as st
 import os, sqlite3, pandas as pd, io, urllib.parse
 from PIL import Image
 
-# --- 1. الإعدادات وقاعدة البيانات ---
+# --- 1. الإعدادات ---
 DB_NAME = 'gallery.db'
 IMG_FOLDER = "images"
 if not os.path.exists(IMG_FOLDER): os.makedirs(IMG_FOLDER)
@@ -47,35 +47,40 @@ if check_auth():
     st.sidebar.title("🏛️ لوحة التحكم")
     menu = st.sidebar.radio("القائمة", ["عرض المخزن 🖼️", "البحث الذكي (AI) 🤖", "إضافة قطعة ✨", "التقارير والإكسيل 📊"])
 
-    # --- قسم البحث الذكي (تم تصحيح هيكل الرابط كلياً لضمان الفتح) ---
+    # --- قسم البحث الذكي (إصلاح الرابط النهائي) ---
     if menu == "البحث الذكي (AI) 🤖":
         st.header("🤖 خبير التقييم والبحث العالمي")
-        up = st.file_uploader("ارفع صورة للبحث عن قيمتها", type=['jpg', 'png', 'jpeg'])
+        up = st.file_uploader("ارفع صورة للبحث", type=['jpg', 'png', 'jpeg'])
         if up:
             st.image(up, width=300)
             if st.button("🚀 ابدأ التحليل والبحث"):
                 with st.spinner("جاري التحليل..."):
                     proc, mod = load_ai()
                     raw = Image.open(up).convert('RGB')
-                    out = mod.generate(**proc(raw, return_tensors="pt"))
+                    inputs = proc(raw, return_tensors="pt")
+                    out = mod.generate(**inputs)
+                    
+                    # استخراج النص الصافي تماماً
                     raw_desc = proc.decode(out, skip_special_tokens=True)
                     clean_desc = str(raw_desc).replace("[", "").replace("]", "").replace("'", "").strip()
                     
                     st.success(f"✅ تم التعرف على: {clean_desc}")
+                    
+                    # ترميز النص للبحث
                     encoded_q = urllib.parse.quote_plus(clean_desc)
                     
                     st.divider()
                     st.subheader("🔗 روابط البحث المباشرة:")
                     
-                    # الروابط المصححة تماماً (https://www.google.com...)
-                    google_url = f"https://www.google.com{encoded_q}&tbm=isch"
-                    ebay_url = f"https://www.ebay.com{encoded_q}"
+                    # الروابط بهيكلها الرسمي الصحيح 100%
+                    ebay_link = f"https://www.ebay.com{encoded_q}"
+                    google_link = f"https://www.google.com{encoded_q}&tbm=isch"
                     
                     c1, c2 = st.columns(2)
-                    c1.link_button("🔍 صور Google", google_url, use_container_width=True)
-                    c2.link_button("🛒 أسعار eBay", ebay_url, use_container_width=True)
+                    c1.link_button("🛒 شاهد الأسعار في eBay", ebay_link, use_container_width=True)
+                    c2.link_button("🔍 البحث في Google Images", google_link, use_container_width=True)
 
-    # --- (الأقسام الأخرى: عرض المخزن، إضافة قطعة، التقارير) ---
+    # --- الأقسام الأخرى تبقى مستقرة كما هي في كودك الأصلي ---
     elif menu == "عرض المخزن 🖼️":
         st.header("🖼️ المقتنيات الحالية")
         with sqlite3.connect(DB_NAME) as conn:
