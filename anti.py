@@ -53,7 +53,7 @@ if check_auth():
     st.sidebar.title("🏛️ لوحة التحكم")
     menu = st.sidebar.radio("القائمة", ["عرض المخزن 🖼️", "البحث الذكي (AI) 🤖", "إضافة قطعة ✨", "التقارير والإكسيل 📊"])
 
-    # --- قسم البحث الذكي (تم تصحيح الروابط بناءً على الصورة) ---
+    # --- قسم البحث الذكي (تم تصحيح هيكل الروابط كلياً) ---
     if menu == "البحث الذكي (AI) 🤖":
         st.header("🤖 خبير التقييم والبحث العالمي")
         up = st.file_uploader("ارفع صورة للبحث عن قيمتها", type=['jpg', 'png', 'jpeg'])
@@ -66,27 +66,27 @@ if check_auth():
                     inputs = proc(raw, return_tensors="pt")
                     out = mod.generate(**inputs)
                     
-                    # تنظيف النص المستخرج ليكون صالحاً للروابط
+                    # تنظيف النص المستخرج
                     raw_desc = proc.decode(out, skip_special_tokens=True)
                     clean_desc = str(raw_desc).replace("[", "").replace("]", "").replace("'", "").strip()
                     
                     st.success(f"✅ تم التعرف على: {clean_desc}")
                     
-                    # ترميز النص بشكل صحيح للبحث
+                    # ترميز النص بشكل صحيح
                     encoded_q = urllib.parse.quote_plus(clean_desc)
                     
                     st.divider()
                     st.subheader("🔗 روابط البحث المباشرة:")
                     
-                    # تصحيح هيكل الروابط لضمان الفتح (استبدال . بمصلة مائلة وإضافة كود البحث)
-                    google_url = f"https://www.google.com{encoded_q}&tbm=isch"
+                    # الروابط بهيكلها الصحيح كما تطلبها المواقع
                     ebay_url = f"https://www.ebay.com{encoded_q}"
+                    google_url = f"https://www.google.com{encoded_q}&tbm=isch"
                     
                     c1, c2 = st.columns(2)
-                    c1.link_button("🔍 صور Google", google_url, use_container_width=True)
-                    c2.link_button("🛒 أسعار eBay", ebay_url, use_container_width=True)
+                    c1.link_button("🛒 شاهد الأسعار في eBay", ebay_url, use_container_width=True)
+                    c2.link_button("🔍 البحث في Google Images", google_url, use_container_width=True)
 
-    # --- الأقسام الأخرى ---
+    # --- الأقسام الأخرى (المخزن، الإضافة، التقارير) ---
     elif menu == "عرض المخزن 🖼️":
         st.header("🖼️ المقتنيات الحالية")
         with sqlite3.connect(DB_NAME) as conn:
