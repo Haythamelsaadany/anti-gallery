@@ -2,8 +2,8 @@ import streamlit as st
 import os, sqlite3, pandas as pd, io, urllib.parse, requests
 from PIL import Image
 
-# --- 1. الإعدادات وقاعدة البيانات ---
-DB_NAME = 'gallery_pro.db' 
+# --- 1. الإعدادات ---
+DB_NAME = 'gallery_final_v5.db' # قاعدة بيانات جديدة نظيفة تماماً
 IMG_FOLDER = "images"
 API_URL = "https://api-inference.huggingface.co"
 HF_TOKEN = st.secrets.get("HF_TOKEN", "")
@@ -38,19 +38,19 @@ def check_auth():
         return False
     return True
 
-st.set_page_config(page_title="نظام الجاليري الشامل", layout="wide")
+st.set_page_config(page_title="جاليري PRO المتكامل", layout="wide")
 init_db()
 
 if check_auth():
     st.sidebar.title("🏛️ التحكم")
     menu = st.sidebar.radio("القائمة", ["إدارة المخزن 🖼️", "البحث الذكي (AI) 🤖", "رفع مقتنيات (Excel) 📥", "التقارير 📊"])
 
-    # --- إدارة وعرض المخزن ---
+    # --- إدارة المخزن ---
     if menu == "إدارة المخزن 🖼️":
-        st.header("🖼️ عرض وتعديل المقتنيات")
+        st.header("🖼️ المقتنيات الحالية")
         with sqlite3.connect(DB_NAME) as conn:
             df = pd.read_sql("SELECT * FROM antiques", conn)
-        if df.empty: st.info("المخزن فارغ. يمكنك الرفع عبر ملف Excel أو إضافة قطعة.")
+        if df.empty: st.info("المخزن فارغ.")
         else:
             cols = st.columns(3)
             for i, row in df.iterrows():
@@ -62,24 +62,31 @@ if check_auth():
                             with sqlite3.connect(DB_NAME) as conn: conn.execute("DELETE FROM antiques WHERE id=?", (row['id'],))
                             st.rerun()
 
-    # --- ميزة رفع ملف Excel (التي طلبتها) ---
+    # --- حل مشكلة رفع الإكسيل (تصحيح الخطأ) ---
     elif menu == "رفع مقتنيات (Excel) 📥":
-        st.header("📥 رفع المخزون دفعة واحدة")
-        uploaded_file = st.file_uploader("اختر ملف Excel يحتوي على (id, name, price, description, image_path)", type=['xlsx'])
-        if uploaded_file:
-            df_upload = pd.read_excel(uploaded_file)
-            if st.button("🚀 بدء استيراد البيانات"):
-                with sqlite3.connect(DB_NAME) as conn:
-                    df_upload.to_sql('antiques', conn, if_exists='append', index=False)
-                st.success(f"تم رفع {len(df_upload)} قطعة بنجاح!"); st.rerun()
+        st.header("📥 رفع المخزون من إكسيل")
+        st.info("تأكد أن ملف الإكسيل يحتوي على الأعمدة: id, name, description, price, image_path")
+        up_ex = st.file_uploader("اختر الملف", type=['xlsx'])
+        if up_ex:
+            df_new = pd.read_excel(up_ex)
+            if st.button("🚀 تنفيذ الرفع الآن"):
+                try:
+                    # التأكد من توافق الأعمدة قبل الرفع لمنع الـ Traceback
+                    cols_needed = ['id', 'name', 'description', 'price', 'image_path']
+                    df_final = df_new[cols_needed]
+                    with sqlite3.connect(DB_NAME) as conn:
+                        df_final.to_sql('antiques', conn, if_exists='append', index=False)
+                    st.success("تم الرفع بنجاح!"); st.rerun()
+                except Exception as e:
+                    st.error(f"خطأ في ملف الإكسيل: تأكد من أسماء الأعمدة. التفاصيل: {e}")
 
     # --- البحث الذكي ---
     elif menu == "البحث الذكي (AI) 🤖":
         st.header("🤖 المحلل الذكي")
-        up = st.file_uploader("ارفع صورة للبحث", type=['jpg', 'png', 'jpeg'])
+        up = st.file_uploader("ارفع صورة", type=['jpg', 'png', 'jpeg'])
         if up:
             st.image(up, width=300)
-            if st.button("🚀 تحليل وبحث"):
+            if st.button("🚀 تحليل"):
                 with st.spinner("جاري التحليل..."):
                     result = query_ai(up.getvalue())
                     if isinstance(result, list) and len(result) > 0:
@@ -91,10 +98,9 @@ if check_auth():
 
     # --- التقارير ---
     elif menu == "التقارير 📊":
-        st.header("📊 التقارير والإحصائيات")
+        st.header("📊 التقارير")
         with sqlite3.connect(DB_NAME) as conn: df = pd.read_sql("SELECT * FROM antiques", conn)
         st.dataframe(df, use_container_width=True)
         if not df.empty:
-            towrite = io.BytesIO()
-            df.to_excel(towrite, index=False, engine='openpyxl')
-            st.download_button("📥 تحميل التقرير الحالي كـ Excel", towrite.getvalue(), "report.xlsx")
+            tow = io.BytesIO(); df.to_excel(tow, index=False, engine='openpyxl')
+            st.download_button("📥 تحميل Excel", tow.getvalue(), "report.xlsx")
