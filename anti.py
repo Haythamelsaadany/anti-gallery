@@ -5,11 +5,13 @@ from PIL import Image
 # --- 1. الإعدادات والربط الذكي ---
 DB_NAME = 'gallery.db'
 IMG_FOLDER = "images"
-# بدلاً من وضع المفتاح هنا، سنستخدم ميزة secrets في Streamlit أو مدخل نصي
-HF_TOKEN = st.secrets["HF_TOKEN"]
-
-
 API_URL = "https://api-inference.huggingface.co"
+
+# جلب التوكن من الأسرار (Secrets)
+if "HF_TOKEN" in st.secrets:
+    HF_TOKEN = st.secrets["HF_TOKEN"]
+else:
+    HF_TOKEN = ""
 
 if not os.path.exists(IMG_FOLDER): os.makedirs(IMG_FOLDER)
 
@@ -19,11 +21,19 @@ def init_db():
                      (id TEXT PRIMARY KEY, name TEXT, description TEXT, 
                       price REAL, image_path TEXT)''')
 
-# --- 2. محرك البحث الذكي عبر الـ API ---
+# --- 2. محرك البحث الذكي (مع معالجة أخطاء التحميل) ---
 def query_ai(image_bytes):
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    response = requests.post(API_URL, headers=headers, data=image_bytes)
-    return response.json()
+    try:
+        response = requests.post(API_URL, headers=headers, data=image_bytes)
+        if response.status_code == 200:
+            return response.json()
+        elif response.status_code == 503: # الموديل قيد التحميل
+            return {"loading": True}
+        else:
+            return {"error": f"Error: {response.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
 
 # --- 3. نظام الحماية ---
 def check_auth():
@@ -45,12 +55,11 @@ if check_auth():
     st.sidebar.title("🏛️ لوحة التحكم")
     menu = st.sidebar.radio("القائمة", ["عرض وتعديل المخزن 🖼️", "البحث الذكي (AI) 🤖", "إضافة قطعة ✨", "التقارير 📊"])
 
-    # --- إدارة وعرض وتعديل المخزن (بما في ذلك الصور) ---
+    # --- عرض وتعديل المخزن (شامل تعديل الصور) ---
     if menu == "عرض وتعديل المخزن 🖼️":
         st.header("🖼️ إدارة المقتنيات")
         with sqlite3.connect(DB_NAME) as conn:
             df = pd.read_sql("SELECT * FROM antiques", conn)
-        
         if df.empty: st.info("المخزن فارغ.")
         else:
             cols = st.columns(3)
@@ -60,35 +69,31 @@ if check_auth():
                         if os.path.exists(row['image_path']): st.image(row['image_path'], use_container_width=True)
                         st.subheader(row['name'])
                         st.write(f"💰 {row['price']} $")
-                        
                         c1, c2 = st.columns(2)
                         if c1.button(f"🗑️ حذف", key=f"del_{row['id']}"):
                             with sqlite3.connect(DB_NAME) as conn: conn.execute("DELETE FROM antiques WHERE id=?", (row['id'],))
                             if os.path.exists(row['image_path']): os.remove(row['image_path'])
                             st.rerun()
-                        
                         if c2.button(f"⚙️ تعديل", key=f"edit_btn_{row['id']}"):
                             st.session_state[f"edit_mode_{row['id']}"] = True
-
+                        
                         if st.session_state.get(f"edit_mode_{row['id']}", False):
                             with st.form(f"form_{row['id']}"):
                                 new_n = st.text_input("الاسم الجديد", row['name'])
                                 new_p = st.number_input("السعر الجديد", value=float(row['price']))
                                 new_d = st.text_area("الوصف الجديد", row['description'])
                                 new_img = st.file_uploader("تحديث الصورة", type=['jpg', 'png', 'jpeg'], key=f"img_{row['id']}")
-                                
-                                if st.form_submit_button("✅ حفظ التعديلات"):
+                                if st.form_submit_button("✅ حفظ"):
                                     path = row['image_path']
                                     if new_img:
                                         with open(path, "wb") as f: f.write(new_img.getbuffer())
-                                    
                                     with sqlite3.connect(DB_NAME) as conn:
                                         conn.execute("UPDATE antiques SET name=?, price=?, description=? WHERE id=?", 
                                                      (new_n, new_p, new_d, row['id']))
                                     st.session_state[f"edit_mode_{row['id']}"] = False
                                     st.success("تم التحديث!"); st.rerun()
 
-    # --- البحث الذكي عبر الـ API (النسخة الخفيفة) ---
+    # --- البحث الذكي (AI) - النسخة المستقرة ---
     elif menu == "البحث الذكي (AI) 🤖":
         st.header("🤖 المحلل الذكي العالمي")
         up = st.file_uploader("ارفع صورة للبحث في النت", type=['jpg', 'png', 'jpeg'])
@@ -97,18 +102,19 @@ if check_auth():
             if st.button("🚀 تحليل وبحث عالمي"):
                 with st.spinner("جاري التواصل مع محركات الذكاء الاصطناعي..."):
                     result = query_ai(up.getvalue())
-                    try:
+                    if isinstance(result, list) and len(result) > 0:
                         res_text = result[0].get('generated_text', '')
                         encoded_q = urllib.parse.quote_plus(res_text)
                         st.success(f"✅ الوصف المستنتج: {res_text}")
-                        
                         st.divider()
-                        st.subheader("🌐 نتائج البحث المباشرة:")
+                        st.subheader("🌐 روابط البحث المباشرة:")
                         c1, c2 = st.columns(2)
-                        c1.link_button("🛒 بحث في أسعار eBay", f"https://www.ebay.com{encoded_q}&LH_Sold=1")
-                        c2.link_button("🔍 بحث في صور Google", f"https://www.google.com{encoded_q}&tbm=isch")
-                    except:
-                        st.error("المحرك الذكي يستعد للعمل، يرجى المحاولة مرة أخرى بعد لحظات.")
+                        c1.link_button("🛒 بحث eBay (الأسعار المباعة)", f"https://www.ebay.com{encoded_q}&LH_Sold=1")
+                        c2.link_button("🔍 صور Google", f"https://www.google.com{encoded_q}&tbm=isch")
+                    elif isinstance(result, dict) and result.get("loading"):
+                        st.warning("🔄 المحرك يستعد للعمل (Loading)... يرجى المحاولة مرة أخرى خلال 20 ثانية.")
+                    else:
+                        st.error(f"❌ لم نتمكن من الحصول على نتيجة. تأكد من إعدادات الـ Secrets.")
 
     # --- إضافة قطعة ---
     elif menu == "إضافة قطعة ✨":
