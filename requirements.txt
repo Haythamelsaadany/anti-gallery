@@ -1,6 +1,7 @@
 streamlit
 pandas
-openpyxl
-pillow
-torch
+Pillow
+duckduckgo-search
 transformers
+torch
+openpyxl
