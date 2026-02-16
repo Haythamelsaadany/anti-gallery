@@ -1,7 +1,5 @@
 streamlit
 pandas
 Pillow
-duckduckgo-search
-transformers
-torch
+requests
 openpyxl
