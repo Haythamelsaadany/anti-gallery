@@ -2,8 +2,8 @@ import streamlit as st
 import os, sqlite3, pandas as pd, io, urllib.parse, requests
 from PIL import Image
 
-# --- 1. الإعدادات وقاعدة البيانات (تم استخدام اسم جديد لتجنب الأخطاء) ---
-DB_NAME = 'gallery_final.db' 
+# --- 1. الإعدادات وقاعدة البيانات ---
+DB_NAME = 'gallery_pro.db' 
 IMG_FOLDER = "images"
 API_URL = "https://api-inference.huggingface.co"
 HF_TOKEN = st.secrets.get("HF_TOKEN", "")
@@ -22,8 +22,8 @@ def query_ai(image_bytes):
     try:
         response = requests.post(API_URL, headers=headers, data=image_bytes)
         if response.status_code == 200: return response.json()
-        return {"error": "المحرك يستعد.. انتظر 20 ثانية وحاول مجدداً."}
-    except: return {"error": "فشل الاتصال بالمحرك الذكي."}
+        return {"error": "المحرك يستعد.. حاول مرة أخرى بعد قليل."}
+    except: return {"error": "فشل الاتصال بالذكاء الاصطناعي."}
 
 # --- 3. نظام الحماية ---
 def check_auth():
@@ -38,53 +38,42 @@ def check_auth():
         return False
     return True
 
-st.set_page_config(page_title="نظام الجاليري المتكامل", layout="wide")
+st.set_page_config(page_title="نظام الجاليري الشامل", layout="wide")
 init_db()
 
 if check_auth():
-    st.sidebar.title("🏛️ التحكم الشامل")
-    menu = st.sidebar.radio("القائمة", ["عرض وتعديل المخزن 🖼️", "البحث الذكي (AI) 🤖", "إضافة قطعة ✨", "التقارير والإكسيل 📊"])
+    st.sidebar.title("🏛️ التحكم")
+    menu = st.sidebar.radio("القائمة", ["إدارة المخزن 🖼️", "البحث الذكي (AI) 🤖", "رفع مقتنيات (Excel) 📥", "التقارير 📊"])
 
-    # --- القسم 1: عرض وتعديل وحذف المقتنيات (الحل لمشكلة KeyError) ---
-    if menu == "عرض وتعديل المخزن 🖼️":
-        st.header("🖼️ إدارة المقتنيات")
+    # --- إدارة وعرض المخزن ---
+    if menu == "إدارة المخزن 🖼️":
+        st.header("🖼️ عرض وتعديل المقتنيات")
         with sqlite3.connect(DB_NAME) as conn:
             df = pd.read_sql("SELECT * FROM antiques", conn)
-        if df.empty: st.info("المخزن فارغ.")
+        if df.empty: st.info("المخزن فارغ. يمكنك الرفع عبر ملف Excel أو إضافة قطعة.")
         else:
             cols = st.columns(3)
             for i, row in df.iterrows():
                 with cols[i % 3]:
                     with st.container(border=True):
-                        # التأكد من وجود المسار وعرض الصورة
-                        p = row['image_path']
-                        if os.path.exists(p): st.image(p, use_container_width=True)
-                        st.subheader(row['name'])
-                        st.write(f"💰 {row['price']} $")
-                        
-                        c1, c2 = st.columns(2)
-                        if c1.button(f"🗑️ حذف", key=f"del_{row['id']}"):
+                        if os.path.exists(row['image_path']): st.image(row['image_path'], use_container_width=True)
+                        st.subheader(row['name']); st.write(f"💰 {row['price']} $")
+                        if st.button(f"🗑️ حذف {row['id']}", key=f"del_{row['id']}"):
                             with sqlite3.connect(DB_NAME) as conn: conn.execute("DELETE FROM antiques WHERE id=?", (row['id'],))
                             st.rerun()
-                        if c2.button(f"⚙️ تعديل", key=f"edit_{row['id']}"):
-                            st.session_state[f"edit_{row['id']}"] = True
 
-                        if st.session_state.get(f"edit_{row['id']}", False):
-                            with st.form(f"form_{row['id']}"):
-                                n_n = st.text_input("الاسم", row['name'])
-                                n_p = st.number_input("السعر", value=float(row['price']))
-                                n_d = st.text_area("الوصف", row['description'])
-                                n_i = st.file_uploader("تحديث الصورة", type=['jpg', 'png', 'jpeg'], key=f"img_{row['id']}")
-                                if st.form_submit_button("✅ حفظ"):
-                                    path = row['image_path']
-                                    if n_i:
-                                        with open(path, "wb") as f: f.write(n_i.getbuffer())
-                                    with sqlite3.connect(DB_NAME) as conn:
-                                        conn.execute("UPDATE antiques SET name=?, price=?, description=? WHERE id=?", (n_n, n_p, n_d, row['id']))
-                                    st.session_state[f"edit_{row['id']}"] = False
-                                    st.success("تم التحديث!"); st.rerun()
+    # --- ميزة رفع ملف Excel (التي طلبتها) ---
+    elif menu == "رفع مقتنيات (Excel) 📥":
+        st.header("📥 رفع المخزون دفعة واحدة")
+        uploaded_file = st.file_uploader("اختر ملف Excel يحتوي على (id, name, price, description, image_path)", type=['xlsx'])
+        if uploaded_file:
+            df_upload = pd.read_excel(uploaded_file)
+            if st.button("🚀 بدء استيراد البيانات"):
+                with sqlite3.connect(DB_NAME) as conn:
+                    df_upload.to_sql('antiques', conn, if_exists='append', index=False)
+                st.success(f"تم رفع {len(df_upload)} قطعة بنجاح!"); st.rerun()
 
-    # --- باقي الأقسام المستقرة ---
+    # --- البحث الذكي ---
     elif menu == "البحث الذكي (AI) 🤖":
         st.header("🤖 المحلل الذكي")
         up = st.file_uploader("ارفع صورة للبحث", type=['jpg', 'png', 'jpeg'])
@@ -94,29 +83,18 @@ if check_auth():
                 with st.spinner("جاري التحليل..."):
                     result = query_ai(up.getvalue())
                     if isinstance(result, list) and len(result) > 0:
-                        res_text = result[0].get('generated_text', '') # تصحيح استخراج النص
+                        res_text = result[0].get('generated_text', '')
                         encoded_q = urllib.parse.quote_plus(res_text)
                         st.success(f"النتيجة: {res_text}")
                         st.link_button("🛒 بحث eBay", f"https://www.ebay.com{encoded_q}&LH_Sold=1")
                     elif "error" in result: st.warning(result["error"])
 
-    elif menu == "إضافة قطعة ✨":
-        with st.form("add"):
-            fid = st.text_input("ID"); fn = st.text_input("الاسم"); fd = st.text_area("الوصف")
-            fp = st.number_input("السعر"); fi = st.file_uploader("الصورة")
-            if st.form_submit_button("💾 حفظ"):
-                if fid and fi:
-                    path = os.path.join(IMG_FOLDER, f"{fid}.jpg")
-                    with open(path, "wb") as f: f.write(fi.getbuffer())
-                    with sqlite3.connect(DB_NAME) as conn:
-                        conn.execute("INSERT OR REPLACE INTO antiques VALUES (?,?,?,?,?)", (fid, fn, fd, fp, path))
-                    st.success("تم الحفظ!"); st.rerun()
-
-    elif menu == "التقارير والإكسيل 📊":
-        st.header("📊 التقارير")
+    # --- التقارير ---
+    elif menu == "التقارير 📊":
+        st.header("📊 التقارير والإحصائيات")
         with sqlite3.connect(DB_NAME) as conn: df = pd.read_sql("SELECT * FROM antiques", conn)
         st.dataframe(df, use_container_width=True)
         if not df.empty:
             towrite = io.BytesIO()
             df.to_excel(towrite, index=False, engine='openpyxl')
-            st.download_button("📥 تحميل Excel", towrite.getvalue(), "inventory.xlsx")
+            st.download_button("📥 تحميل التقرير الحالي كـ Excel", towrite.getvalue(), "report.xlsx")
